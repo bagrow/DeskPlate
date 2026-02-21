@@ -53,7 +53,8 @@ class PreferencesViewController: NSViewController {
         title.toolTip = "The name\u{2019}s Plate. Desk Plate."
         view.addSubview(title)
 
-        let byline = NSTextField(labelWithString: "v1.0 by James Bagrow")
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let byline = NSTextField(labelWithString: "v\(version) by James Bagrow")
         byline.font = NSFont.systemFont(ofSize: 12)
         byline.textColor = .secondaryLabelColor
         byline.translatesAutoresizingMaskIntoConstraints = false
