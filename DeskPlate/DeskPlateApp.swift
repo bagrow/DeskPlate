@@ -3,7 +3,7 @@ import Cocoa
 private let defaultIcon = "tag.fill"
 
 @main
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var spaceManager: SpaceManager!
     var statusItem: NSStatusItem!
     var statusMenu: NSMenu!
@@ -81,6 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             item.state = pos == spaceManager.labelPosition ? .on : .off
             sub.addItem(item)
         }
+        sub.delegate = self
         posMenu.submenu = sub
         statusMenu.addItem(posMenu)
         statusMenu.addItem(NSMenuItem.separator())
@@ -120,13 +121,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesWindow = nil
     }
 
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        for item in menu.items {
+            guard let pos = item.representedObject as? LabelPosition else { continue }
+            item.state = pos == spaceManager.labelPosition ? .on : .off
+        }
+    }
+
     @objc func setPosition(_ sender: NSMenuItem) {
         guard let pos = sender.representedObject as? LabelPosition else { return }
         spaceManager.labelPosition = pos
-        // Update checkmarks
-        if let sub = sender.menu {
-            for item in sub.items { item.state = .off }
-        }
-        sender.state = .on
     }
 }
