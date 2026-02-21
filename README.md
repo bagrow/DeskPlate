@@ -7,6 +7,8 @@
 A lightweight menu bar app that shows a floating label identifying your current desktop/space. Give your spaces memorable names to keep track of your work.
 Built for macOS 26 (Tahoe).
 
+By Jim Bagrow (https://bagrow.com)
+
 <p align="center">
   <img src="assets/main-window.png" width="350" alt="Edit Labels window" valign="middle">
   <img src="assets/screenshot.png" width="400" alt="Floating glass label on desktop" valign="middle">
@@ -55,9 +57,6 @@ make install
 - [DesktopRenamer](https://github.com/gitmichaelqiu/DesktopRenamer) -- rename macOS desktops/spaces, shown as a menu bar label
 - [Spaces Renamer](https://github.com/dado3212/spaces-renamer) -- rename spaces directly in Mission Control (requires SIP disabled; Intel only)
 
-## Author
-
-James Bagrow
 
 ## License
 
