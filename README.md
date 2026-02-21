@@ -53,7 +53,8 @@ make install
     
 ## See Also
 
-- [Spaceman](https://github.com/Jaysce/Spaceman) -- view your Spaces in the menu bar (also available as a [maintained fork](https://github.com/ruittenb/Spaceman))
+- [WhichSpace](https://github.com/gechr/WhichSpace) -- View and switch Spaces from the menubar
+- [Spaceman](https://github.com/ruittenb/Spaceman) -- view your Spaces in the menu bar ([original project](https://github.com/Jaysce/Spaceman), may be unmaintained)
 - [DesktopRenamer](https://github.com/gitmichaelqiu/DesktopRenamer) -- rename macOS desktops/spaces, shown as a menu bar label
 - [Spaces Renamer](https://github.com/dado3212/spaces-renamer) -- rename spaces directly in Mission Control (requires SIP disabled; Intel only)
 
