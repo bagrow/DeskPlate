@@ -1,0 +1,4 @@
+build/
+.DS_Store
+*.swp
+.claude/settings.local.json
