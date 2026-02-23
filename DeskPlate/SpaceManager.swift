@@ -1,4 +1,5 @@
 import Cocoa
+import SwiftUI
 
 // MARK: - Position enum
 
@@ -22,6 +23,51 @@ enum LabelPosition: String, CaseIterable, Codable {
         case .bottomLeft: return "rectangle.inset.bottomleft.filled"
         case .bottomRight: return "rectangle.inset.bottomright.filled"
         case .inMenubar: return "menubar.rectangle"
+        }
+    }
+}
+
+// MARK: - Tint enum
+
+enum LabelTint: String, CaseIterable, Codable {
+    case clear, blue, purple, red, orange, yellow, green, gray
+
+    var displayName: String {
+        switch self {
+        case .clear:  return "Clear"
+        case .blue:   return "Blue"
+        case .purple: return "Purple"
+        case .red:    return "Red"
+        case .orange: return "Orange"
+        case .yellow: return "Yellow"
+        case .green:  return "Green"
+        case .gray:   return "Gray"
+        }
+    }
+
+    var swiftUIColor: Color? {
+        switch self {
+        case .clear:  return nil
+        case .blue:   return .blue
+        case .purple: return .purple
+        case .red:    return .red
+        case .orange: return .orange
+        case .yellow: return .yellow
+        case .green:  return .green
+        case .gray:   return .gray
+        }
+    }
+
+    var nsColor: NSColor {
+        switch self {
+        case .clear:  return .clear
+        case .blue:   return .systemBlue
+        case .purple: return .systemPurple
+        case .red:    return .systemRed
+        case .orange: return .systemOrange
+        case .yellow: return .systemYellow
+        case .green:  return .systemGreen
+        case .gray:   return .systemGray
         }
     }
 }
@@ -58,6 +104,14 @@ class SpaceManager: NSObject {
         }
     }
 
+    var labelTint: LabelTint = .clear {
+        didSet {
+            UserDefaults.standard.set(labelTint.rawValue, forKey: "labelTint")
+            overlayWindow?.tintColor = labelTint.swiftUIColor
+            updateOverlay()
+        }
+    }
+
     var labelMargin: CGFloat = 0 {
         didSet {
             UserDefaults.standard.set(Double(labelMargin), forKey: "labelMargin")
@@ -78,6 +132,10 @@ class SpaceManager: NSObject {
             labelPosition = pos
         }
         labelMargin = CGFloat(UserDefaults.standard.double(forKey: "labelMargin"))
+        if let tintStr = UserDefaults.standard.string(forKey: "labelTint"),
+           let tint = LabelTint(rawValue: tintStr) {
+            labelTint = tint
+        }
         suppressDidSet = false
     }
 
@@ -93,6 +151,7 @@ class SpaceManager: NSObject {
         // Create the overlay window
         overlayWindow = LabelWindow(position: labelPosition)
         overlayWindow?.margin = labelMargin
+        overlayWindow?.tintColor = labelTint.swiftUIColor
 
         // Listen for space changes
         NSWorkspace.shared.notificationCenter.addObserver(

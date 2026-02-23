@@ -15,6 +15,9 @@ class PreferencesViewController: NSViewController {
     private var offsetLabel: NSTextField!
     private var offsetField: NSTextField!
     private var offsetStepper: NSStepper!
+    private var colorLabel: NSTextField!
+    private var colorStack: NSStackView!
+    private var colorButtons: [LabelTint: NSButton] = [:]
     private var spaceCount = 8
 
     init(spaceManager: SpaceManager) {
@@ -84,6 +87,7 @@ class PreferencesViewController: NSViewController {
         // Label position
         let posLabel = NSTextField(labelWithString: "Label Position")
         posLabel.font = NSFont.systemFont(ofSize: 12)
+        posLabel.alignment = .right
         posLabel.toolTip = "Where to show the desktop label on screen"
         posLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(posLabel)
@@ -139,14 +143,69 @@ class PreferencesViewController: NSViewController {
         stepper.action = #selector(stepperChanged(_:))
         view.addSubview(stepper)
 
-        let hideOffset = spaceManager.labelPosition == .inMenubar
-        offsetLabel.isHidden = hideOffset
-        offsetField.isHidden = hideOffset
-        offsetStepper.isHidden = hideOffset
+        let hideOverlay = spaceManager.labelPosition == .inMenubar
+        offsetLabel.isHidden = hideOverlay
+        offsetField.isHidden = hideOverlay
+        offsetStepper.isHidden = hideOverlay
+
+        // Label Tint
+        colorLabel = NSTextField(labelWithString: "Label Tint")
+        colorLabel.font = NSFont.systemFont(ofSize: 12)
+        colorLabel.alignment = .right
+        colorLabel.toolTip = "Tint color for the desktop label overlay"
+        colorLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(colorLabel)
+
+        colorStack = NSStackView()
+        colorStack.orientation = .horizontal
+        colorStack.spacing = 6
+        colorStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(colorStack)
+
+        for tint in LabelTint.allCases {
+            let btn = NSButton(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+            btn.title = ""
+            btn.bezelStyle = .recessed
+            btn.isBordered = false
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 10
+            btn.layer?.masksToBounds = true
+            btn.translatesAutoresizingMaskIntoConstraints = false
+            btn.toolTip = tint == .clear ? "Clear (default)" : tint.displayName
+            btn.target = self
+            btn.action = #selector(colorButtonClicked(_:))
+
+            if tint == .clear {
+                // Draw a "no color" circle: light gray with a diagonal line
+                btn.layer?.backgroundColor = NSColor.quaternaryLabelColor.cgColor
+                btn.layer?.borderWidth = 1
+                btn.layer?.borderColor = NSColor.tertiaryLabelColor.cgColor
+            } else {
+                btn.layer?.backgroundColor = tint.nsColor.cgColor
+            }
+
+            // Selection indicator
+            if tint == spaceManager.labelTint {
+                btn.layer?.borderWidth = 2
+                btn.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            }
+
+            NSLayoutConstraint.activate([
+                btn.widthAnchor.constraint(equalToConstant: 20),
+                btn.heightAnchor.constraint(equalToConstant: 20),
+            ])
+
+            colorButtons[tint] = btn
+            colorStack.addArrangedSubview(btn)
+        }
+
+        colorLabel.isHidden = hideOverlay
+        colorStack.isHidden = hideOverlay
 
         // Start at Login
         let loginLabel = NSTextField(labelWithString: "Start at Login")
         loginLabel.font = NSFont.systemFont(ofSize: 12)
+        loginLabel.alignment = .right
         loginLabel.toolTip = "Automatically launch Desk Plate when you log in"
         loginLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(loginLabel)
@@ -189,16 +248,18 @@ class PreferencesViewController: NSViewController {
             stackView.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             stackView.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
-            posLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            posLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
+            posLabel.trailingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 80),
             posLabel.centerYAnchor.constraint(equalTo: posPopup.centerYAnchor),
 
-            posPopup.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 84),
+            posPopup.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 88),
             posPopup.topAnchor.constraint(equalTo: stackView.bottomAnchor, constant: 16),
 
             offsetLabel.leadingAnchor.constraint(equalTo: posPopup.trailingAnchor, constant: 12),
             offsetLabel.centerYAnchor.constraint(equalTo: posPopup.centerYAnchor),
 
-            offsetField.leadingAnchor.constraint(equalTo: offsetLabel.trailingAnchor, constant: 4),
+            offsetField.leadingAnchor.constraint(equalTo: offsetLabel.trailingAnchor, constant: 8),
+            offsetField.widthAnchor.constraint(greaterThanOrEqualToConstant: 40),
             offsetField.centerYAnchor.constraint(equalTo: posPopup.centerYAnchor),
 
             stepper.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
@@ -206,18 +267,26 @@ class PreferencesViewController: NSViewController {
 
             offsetField.trailingAnchor.constraint(equalTo: stepper.leadingAnchor, constant: -2),
 
-            divider.topAnchor.constraint(equalTo: posPopup.bottomAnchor, constant: 12),
+            colorLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
+            colorLabel.trailingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 80),
+            colorLabel.topAnchor.constraint(equalTo: posPopup.bottomAnchor, constant: 12),
+
+            colorStack.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 88),
+            colorStack.centerYAnchor.constraint(equalTo: colorLabel.centerYAnchor),
+
+            divider.topAnchor.constraint(equalTo: colorLabel.bottomAnchor, constant: 12),
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
             loginLabel.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
-            loginLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            loginLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
+            loginLabel.trailingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 80),
 
             loginToggle.centerYAnchor.constraint(equalTo: loginLabel.centerYAnchor),
-            loginToggle.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 84),
+            loginToggle.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 88),
 
-            doneBtn.topAnchor.constraint(equalTo: loginLabel.bottomAnchor, constant: 12),
-            doneBtn.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -12),
+            doneBtn.topAnchor.constraint(equalTo: loginLabel.bottomAnchor, constant: 8),
+            doneBtn.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
             doneBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             doneBtn.widthAnchor.constraint(equalToConstant: 80),
         ])
@@ -230,6 +299,7 @@ class PreferencesViewController: NSViewController {
 
         let indexLabel = NSTextField(labelWithString: String(format: "Desktop %d", index + 1))
         indexLabel.font = NSFont.systemFont(ofSize: 12)
+        indexLabel.alignment = .right
         indexLabel.translatesAutoresizingMaskIntoConstraints = false
         indexLabel.setContentHuggingPriority(.required, for: .horizontal)
 
@@ -276,7 +346,7 @@ class PreferencesViewController: NSViewController {
             indexLabel.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             indexLabel.widthAnchor.constraint(equalToConstant: 80),
 
-            iconBtn.leadingAnchor.constraint(equalTo: indexLabel.trailingAnchor, constant: 4),
+            iconBtn.leadingAnchor.constraint(equalTo: indexLabel.trailingAnchor, constant: 8),
             iconBtn.centerYAnchor.constraint(equalTo: row.centerYAnchor),
             iconBtn.widthAnchor.constraint(equalToConstant: 36),
             iconBtn.heightAnchor.constraint(equalToConstant: 28),
@@ -338,6 +408,27 @@ class PreferencesViewController: NSViewController {
         offsetLabel.isHidden = hide
         offsetField.isHidden = hide
         offsetStepper.isHidden = hide
+        colorLabel.isHidden = hide
+        colorStack.isHidden = hide
+    }
+
+    @objc private func colorButtonClicked(_ sender: NSButton) {
+        guard let tint = colorButtons.first(where: { $0.value === sender })?.key else { return }
+        spaceManager.labelTint = tint
+
+        // Update selection indicators
+        for (t, btn) in colorButtons {
+            if t == tint {
+                btn.layer?.borderWidth = 2
+                btn.layer?.borderColor = NSColor.controlAccentColor.cgColor
+            } else if t == .clear {
+                btn.layer?.borderWidth = 1
+                btn.layer?.borderColor = NSColor.tertiaryLabelColor.cgColor
+            } else {
+                btn.layer?.borderWidth = 0
+                btn.layer?.borderColor = nil
+            }
+        }
     }
 
     @objc private func stepperChanged(_ sender: NSStepper) {

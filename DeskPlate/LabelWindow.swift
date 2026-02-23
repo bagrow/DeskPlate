@@ -6,6 +6,7 @@ import SwiftUI
 struct GlassLabelView: View {
     let text: String
     let iconName: String?
+    var tintColor: Color?
 
     var body: some View {
         GlassEffectContainer {
@@ -19,6 +20,11 @@ struct GlassLabelView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .background {
+                if let tintColor {
+                    Capsule().fill(tintColor.opacity(0.3))
+                }
+            }
             .glassEffect(.clear, in: .capsule)
         }
     }
@@ -30,6 +36,7 @@ class LabelWindow: NSPanel {
     private var currentPosition: LabelPosition
     private var hostingView: NSHostingView<GlassLabelView>!
     var margin: CGFloat = 0
+    var tintColor: Color?
     private var refreshTimer: Timer?
 
     init(position: LabelPosition) {
@@ -76,7 +83,7 @@ class LabelWindow: NSPanel {
     }
 
     func show(label: String, icon: String? = nil) {
-        hostingView.rootView = GlassLabelView(text: label, iconName: icon)
+        hostingView.rootView = GlassLabelView(text: label, iconName: icon, tintColor: tintColor)
         sizeToFit()
         orderFront(nil)
         if refreshTimer == nil { startRefresh() }
