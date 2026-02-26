@@ -38,6 +38,10 @@ class LabelWindow: NSPanel {
     var margin: CGFloat = 0
     var tintColor: Color?
     private var refreshTimer: Timer?
+    private var isMouseOver = false
+    private var mouseMonitorGlobal: Any?
+    private var mouseMonitorLocal: Any?
+    private static let hoveredAlpha: CGFloat = 0.15
 
     init(position: LabelPosition) {
         self.currentPosition = position
@@ -71,8 +75,51 @@ class LabelWindow: NSPanel {
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 3.0, repeats: true) { [weak self] _ in
             guard let self = self else { return }
             toggle.toggle()
-            self.alphaValue = toggle ? 0.998 : 1.0
+            let base = self.isMouseOver ? LabelWindow.hoveredAlpha : 1.0
+            self.alphaValue = toggle ? (base - 0.002) : base
         }
+    }
+
+    // MARK: - Hover fade
+
+    private func startMouseTracking() {
+        mouseMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved]) { [weak self] _ in
+            self?.checkMousePosition()
+        }
+        mouseMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            self?.checkMousePosition()
+            return event
+        }
+    }
+
+    private func stopMouseTracking() {
+        if let monitor = mouseMonitorGlobal {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitorGlobal = nil
+        }
+        if let monitor = mouseMonitorLocal {
+            NSEvent.removeMonitor(monitor)
+            mouseMonitorLocal = nil
+        }
+    }
+
+    private func checkMousePosition() {
+        let mouseLocation = NSEvent.mouseLocation
+        let isInside = frame.contains(mouseLocation)
+        guard isInside != isMouseOver else { return }
+        isMouseOver = isInside
+
+        // Pause refresh timer so it doesn't fight the animation
+        refreshTimer?.invalidate()
+        refreshTimer = nil
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            self.animator().alphaValue = isInside ? LabelWindow.hoveredAlpha : 1.0
+        }, completionHandler: { [weak self] in
+            self?.startRefresh()
+        })
     }
 
     private func setupViews() {
@@ -87,11 +134,14 @@ class LabelWindow: NSPanel {
         sizeToFit()
         orderFront(nil)
         if refreshTimer == nil { startRefresh() }
+        if mouseMonitorGlobal == nil { startMouseTracking() }
     }
 
     override func orderOut(_ sender: Any?) {
         refreshTimer?.invalidate()
         refreshTimer = nil
+        stopMouseTracking()
+        isMouseOver = false
         super.orderOut(sender)
     }
 
