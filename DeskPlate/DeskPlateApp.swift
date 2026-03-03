@@ -28,15 +28,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if let iconName = iconName {
                 button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: label)
             } else {
-                button.image = NSImage(systemSymbolName: defaultIcon, accessibilityDescription: "Desk Plate")
+                let icon = self.spaceManager.overlayEnabled ? defaultIcon : "tag"
+                button.image = NSImage(systemSymbolName: icon, accessibilityDescription: "Desk Plate")
             }
             button.imagePosition = .imageLeft
         }
         spaceManager.onMenubarLabelClear = { [weak self] in
             guard let self = self, let button = self.statusItem.button else { return }
             button.title = ""
-            button.image = NSImage(systemSymbolName: defaultIcon, accessibilityDescription: "Desk Plate")
+            let icon = self.spaceManager.overlayEnabled ? defaultIcon : "tag"
+            button.image = NSImage(systemSymbolName: icon, accessibilityDescription: "Desk Plate")
             button.imagePosition = .imageLeft
+        }
+        spaceManager.onOverlayEnabledChanged = { [weak self] enabled in
+            self?.updateStatusIcon()
+            (self?.preferencesWindow?.contentViewController as? PreferencesViewController)?.updateOverlayToggle(enabled)
         }
 
         spaceManager.start()
@@ -70,7 +76,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
         statusMenu = NSMenu()
+        statusMenu.delegate = self
         statusMenu.addItem(NSMenuItem(title: "Edit Labels…", action: #selector(openPreferences), keyEquivalent: ","))
+        let overlayItem = NSMenuItem(title: "Disable Overlay", action: #selector(toggleOverlay(_:)), keyEquivalent: "")
+        overlayItem.tag = 999
+        statusMenu.addItem(overlayItem)
         statusMenu.addItem(NSMenuItem.separator())
         let posMenu = NSMenuItem(title: "Label Position", action: nil, keyEquivalent: "")
         let sub = NSMenu()
@@ -90,7 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc func statusBarClicked() {
         guard let event = NSApp.currentEvent else { return }
-        if event.type == .rightMouseUp {
+        if event.type == .rightMouseUp || event.modifierFlags.contains(.control) {
             statusItem.menu = statusMenu
             statusItem.button?.performClick(nil)
             statusItem.menu = nil
@@ -121,8 +131,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         preferencesWindow = nil
     }
 
+    @objc func toggleOverlay(_ sender: NSMenuItem) {
+        spaceManager.overlayEnabled.toggle()
+    }
+
+    private func updateStatusIcon() {
+        guard let button = statusItem.button else { return }
+        let iconName = spaceManager.overlayEnabled ? "tag.fill" : "tag"
+        button.image = NSImage(systemSymbolName: iconName, accessibilityDescription: "Desk Plate")
+    }
+
     func menuNeedsUpdate(_ menu: NSMenu) {
         for item in menu.items {
+            if item.tag == 999 {
+                item.title = spaceManager.overlayEnabled ? "Disable Overlay" : "Enable Overlay"
+                continue
+            }
             guard let pos = item.representedObject as? LabelPosition else { continue }
             item.state = pos == spaceManager.labelPosition ? .on : .off
         }

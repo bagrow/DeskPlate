@@ -18,6 +18,7 @@ class PreferencesViewController: NSViewController {
     private var colorLabel: NSTextField!
     private var colorStack: NSStackView!
     private var colorButtons: [LabelTint: NSButton] = [:]
+    private var overlayToggle: NSSwitch!
     private var spaceCount = 8
 
     init(spaceManager: SpaceManager) {
@@ -39,6 +40,10 @@ class PreferencesViewController: NSViewController {
         // Let Auto Layout compute the height from the top-to-bottom constraint chain
         let fitting = view.fittingSize
         view.setFrameSize(NSSize(width: 400, height: fitting.height))
+    }
+
+    func updateOverlayToggle(_ enabled: Bool) {
+        overlayToggle?.state = enabled ? .on : .off
     }
 
     override func viewDidAppear() {
@@ -202,10 +207,30 @@ class PreferencesViewController: NSViewController {
         colorLabel.isHidden = hideOverlay
         colorStack.isHidden = hideOverlay
 
-        // Start at Login
+        // Divider
+        let divider = NSBox()
+        divider.boxType = .separator
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(divider)
+
+        // Show Overlay (left) + Start at Login (right) — same row
+        let overlayLabel = NSTextField(labelWithString: "Show Overlay")
+        overlayLabel.font = NSFont.systemFont(ofSize: 12)
+        overlayLabel.toolTip = "Show or hide the desktop label overlay"
+        overlayLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(overlayLabel)
+
+        overlayToggle = NSSwitch()
+        overlayToggle.controlSize = .mini
+        overlayToggle.translatesAutoresizingMaskIntoConstraints = false
+        overlayToggle.state = spaceManager.overlayEnabled ? .on : .off
+        overlayToggle.toolTip = "Show or hide the desktop label overlay"
+        overlayToggle.target = self
+        overlayToggle.action = #selector(overlayToggled(_:))
+        view.addSubview(overlayToggle)
+
         let loginLabel = NSTextField(labelWithString: "Start at Login")
         loginLabel.font = NSFont.systemFont(ofSize: 12)
-        loginLabel.alignment = .right
         loginLabel.toolTip = "Automatically launch Desk Plate when you log in"
         loginLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(loginLabel)
@@ -218,12 +243,6 @@ class PreferencesViewController: NSViewController {
         loginToggle.target = self
         loginToggle.action = #selector(loginToggled(_:))
         view.addSubview(loginToggle)
-
-        // Divider
-        let divider = NSBox()
-        divider.boxType = .separator
-        divider.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(divider)
 
         // Done button
         let doneBtn = NSButton(title: "Done", target: self, action: #selector(dismissWindow))
@@ -278,14 +297,19 @@ class PreferencesViewController: NSViewController {
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
-            loginLabel.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
-            loginLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 8),
-            loginLabel.trailingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 80),
+            overlayLabel.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
+            overlayLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
 
-            loginToggle.centerYAnchor.constraint(equalTo: loginLabel.centerYAnchor),
-            loginToggle.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 88),
+            overlayToggle.centerYAnchor.constraint(equalTo: overlayLabel.centerYAnchor),
+            overlayToggle.leadingAnchor.constraint(equalTo: overlayLabel.trailingAnchor, constant: 8),
 
-            doneBtn.topAnchor.constraint(equalTo: loginLabel.bottomAnchor, constant: 8),
+            loginLabel.centerYAnchor.constraint(equalTo: overlayLabel.centerYAnchor),
+            loginLabel.leadingAnchor.constraint(equalTo: overlayToggle.trailingAnchor, constant: 20),
+
+            loginToggle.centerYAnchor.constraint(equalTo: overlayLabel.centerYAnchor),
+            loginToggle.leadingAnchor.constraint(equalTo: loginLabel.trailingAnchor, constant: 8),
+
+            doneBtn.topAnchor.constraint(equalTo: overlayLabel.bottomAnchor, constant: 8),
             doneBtn.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
             doneBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             doneBtn.widthAnchor.constraint(equalToConstant: 80),
@@ -435,6 +459,10 @@ class PreferencesViewController: NSViewController {
         let value = sender.integerValue
         offsetField.integerValue = value
         spaceManager.labelMargin = CGFloat(value)
+    }
+
+    @objc private func overlayToggled(_ sender: NSSwitch) {
+        spaceManager.overlayEnabled = sender.state == .on
     }
 
     @objc private func loginToggled(_ sender: NSSwitch) {

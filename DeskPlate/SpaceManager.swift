@@ -89,6 +89,16 @@ class SpaceManager: NSObject {
     }
     var onMenubarLabelUpdate: ((String, String?) -> Void)?
     var onMenubarLabelClear: (() -> Void)?
+    var onOverlayEnabledChanged: ((Bool) -> Void)?
+
+    var overlayEnabled: Bool = true {
+        didSet {
+            guard !suppressDidSet else { return }
+            UserDefaults.standard.set(overlayEnabled, forKey: "overlayEnabled")
+            onOverlayEnabledChanged?(overlayEnabled)
+            updateOverlay()
+        }
+    }
 
     var labelPosition: LabelPosition = .topRight {
         didSet {
@@ -135,6 +145,9 @@ class SpaceManager: NSObject {
         if let tintStr = UserDefaults.standard.string(forKey: "labelTint"),
            let tint = LabelTint(rawValue: tintStr) {
             labelTint = tint
+        }
+        if UserDefaults.standard.object(forKey: "overlayEnabled") != nil {
+            overlayEnabled = UserDefaults.standard.bool(forKey: "overlayEnabled")
         }
         suppressDidSet = false
     }
@@ -219,6 +232,12 @@ class SpaceManager: NSObject {
     // MARK: - Overlay Update
 
     func updateOverlay() {
+        if !overlayEnabled {
+            overlayWindow?.orderOut(nil)
+            onMenubarLabelClear?()
+            return
+        }
+
         guard let realIndex = getSpaceIndexUsingCGS() else {
             // CGS failed — show warning instead of wrong desktop
             if labelPosition == .inMenubar {
