@@ -416,7 +416,7 @@ class PreferencesViewController: NSViewController {
         )
 
         let hostingController = NSHostingController(rootView: picker)
-        hostingController.preferredContentSize = NSSize(width: 370, height: 360)
+        hostingController.preferredContentSize = NSSize(width: 370, height: 385)
 
         let popover = NSPopover()
         popover.contentViewController = hostingController

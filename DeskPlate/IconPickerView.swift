@@ -76,6 +76,14 @@ enum SFSymbolCatalog {
             "chart.line.uptrend.xyaxis", "percent",
             "building.columns", "chart.pie"
         ]),
+        SFSymbolCategory(name: "Teaching & Presenting", symbols: [
+            "videoprojector", "studentdesk", "person.and.background.dotted",
+            "graduationcap", "books.vertical", "person.3",
+            "hand.raised", "questionmark.bubble", "mic",
+            "pencil.and.ruler", "rectangle.inset.filled.and.person.filled",
+            "lanyardcard", "laser.burst", "timer",
+            "person.crop.rectangle"
+        ]),
         SFSymbolCategory(name: "Nature & Places", symbols: [
             "leaf", "sun.max", "moon",
             "star", "house", "building",
@@ -211,6 +219,21 @@ enum SFSymbolCatalog {
         "percent": "Percent",
         "building.columns": "Bank",
         "chart.pie": "Pie Chart",
+        "videoprojector": "Video Projector",
+        "studentdesk": "Student Desk",
+        "person.and.background.dotted": "Person (Dotted)",
+        "graduationcap": "Graduation Cap",
+        "books.vertical": "Books",
+        "person.3": "Class / Group",
+        "hand.raised": "Raised Hand",
+        "questionmark.bubble": "Question",
+        "mic": "Microphone",
+        "pencil.and.ruler": "Pencil & Ruler",
+        "rectangle.inset.filled.and.person.filled": "Presenter Display",
+        "lanyardcard": "Lanyard Badge",
+        "laser.burst": "Laser Pointer",
+        "timer": "Timer",
+        "person.crop.rectangle": "Person Badge",
     ]
 
     static func displayName(for symbol: String) -> String {
@@ -224,37 +247,72 @@ struct IconPickerView: View {
     let selectedIcon: String?
     let onSelect: (String?) -> Void
 
+    @State private var searchText = ""
+
     private let columns = Array(repeating: GridItem(.fixed(36), spacing: 8), count: 8)
+
+    private var filteredCategories: [SFSymbolCategory] {
+        let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
+        if query.isEmpty { return SFSymbolCatalog.categories }
+        return SFSymbolCatalog.categories.compactMap { category in
+            if category.name.lowercased().contains(query) {
+                return category
+            }
+            let matched = category.symbols.filter { symbol in
+                symbol.lowercased().contains(query)
+                    || SFSymbolCatalog.displayName(for: symbol).lowercased().contains(query)
+            }
+            return matched.isEmpty ? nil : SFSymbolCategory(name: category.name, symbols: matched)
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            Button(action: { onSelect(nil) }) {
-                HStack {
-                    Image(systemName: "xmark.circle")
-                    Text("No Icon")
-                    Spacer()
-                    if selectedIcon == nil {
-                        Image(systemName: "checkmark")
-                            .foregroundColor(.accentColor)
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 12))
+                TextField("Search symbols…", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if !searchText.isEmpty {
+                    Button(action: { searchText = "" }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 11))
                     }
+                    .buttonStyle(.plain)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .focusable(false)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
 
             Divider()
 
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(SFSymbolCatalog.categories.enumerated()), id: \.offset) { _, category in
+                    Button(action: { onSelect(nil) }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "xmark.circle")
+                                .font(.system(size: 12))
+                            Text("No Icon")
+                                .font(.system(size: 12))
+                            Spacer()
+                            if selectedIcon == nil {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    ForEach(Array(filteredCategories.enumerated()), id: \.offset) { _, category in
                         VStack(alignment: .leading, spacing: 6) {
                             Text(category.name)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                                .padding(.horizontal, 8)
 
                             LazyVGrid(columns: columns, spacing: 4) {
                                 ForEach(category.symbols, id: \.self) { symbolName in
@@ -273,11 +331,10 @@ struct IconPickerView: View {
                                     .help(SFSymbolCatalog.displayName(for: symbolName))
                                 }
                             }
-                            .padding(.horizontal, 4)
                         }
                     }
                 }
-                .padding(8)
+                .padding(12)
             }
         }
     }
