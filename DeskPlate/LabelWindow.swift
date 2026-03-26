@@ -152,9 +152,11 @@ class LabelWindow: NSPanel {
         updatePosition(currentPosition)
     }
 
+    var targetScreen: NSScreen?
+
     func updatePosition(_ position: LabelPosition) {
         currentPosition = position
-        guard let screen = NSScreen.main else { return }
+        guard let screen = targetScreen ?? NSScreen.main else { return }
         let visibleFrame = screen.visibleFrame
         let winFrame = frame
         var origin = NSPoint.zero

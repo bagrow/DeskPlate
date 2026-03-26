@@ -78,8 +78,9 @@ private let RTLD_DEFAULT = UnsafeMutableRawPointer(bitPattern: -2)
 // MARK: - SpaceManager
 
 class SpaceManager: NSObject {
-    private var overlayWindow: LabelWindow?
+    private var overlayWindows: [String: LabelWindow] = [:]  // keyed by CGS display identifier
     private var currentSpaceIndex: Int = 0
+    private(set) var activeSpaceIndices: Set<Int> = []
     private var suppressDidSet = true
     var labels: [Int: String] = [:] {
         didSet { guard !suppressDidSet else { return }; saveLabels(); updateOverlay() }
@@ -90,6 +91,8 @@ class SpaceManager: NSObject {
     var onMenubarLabelUpdate: ((String, String?) -> Void)?
     var onMenubarLabelClear: (() -> Void)?
     var onOverlayEnabledChanged: ((Bool) -> Void)?
+    var onSpaceCountChanged: ((Int) -> Void)?
+    private(set) var spaceCount: Int = 0
 
     var overlayEnabled: Bool = true {
         didSet {
@@ -100,15 +103,23 @@ class SpaceManager: NSObject {
         }
     }
 
+    var hideUnlabeled: Bool = false {
+        didSet {
+            guard !suppressDidSet else { return }
+            UserDefaults.standard.set(hideUnlabeled, forKey: "hideUnlabeled")
+            updateOverlay()
+        }
+    }
+
     var labelPosition: LabelPosition = .topRight {
         didSet {
             UserDefaults.standard.set(labelPosition.rawValue, forKey: "labelPosition")
             if labelPosition == .inMenubar {
-                overlayWindow?.orderOut(nil)
+                for win in overlayWindows.values { win.orderOut(nil) }
                 updateOverlay()
             } else {
                 onMenubarLabelClear?()
-                overlayWindow?.updatePosition(labelPosition)
+                for win in overlayWindows.values { win.updatePosition(labelPosition) }
                 updateOverlay()
             }
         }
@@ -117,7 +128,7 @@ class SpaceManager: NSObject {
     var labelTint: LabelTint = .clear {
         didSet {
             UserDefaults.standard.set(labelTint.rawValue, forKey: "labelTint")
-            overlayWindow?.tintColor = labelTint.swiftUIColor
+            for win in overlayWindows.values { win.tintColor = labelTint.swiftUIColor }
             updateOverlay()
         }
     }
@@ -125,8 +136,10 @@ class SpaceManager: NSObject {
     var labelMargin: CGFloat = 0 {
         didSet {
             UserDefaults.standard.set(Double(labelMargin), forKey: "labelMargin")
-            overlayWindow?.margin = labelMargin
-            overlayWindow?.updatePosition(labelPosition)
+            for win in overlayWindows.values {
+                win.margin = labelMargin
+                win.updatePosition(labelPosition)
+            }
         }
     }
 
@@ -149,7 +162,9 @@ class SpaceManager: NSObject {
         if UserDefaults.standard.object(forKey: "overlayEnabled") != nil {
             overlayEnabled = UserDefaults.standard.bool(forKey: "overlayEnabled")
         }
+        hideUnlabeled = UserDefaults.standard.bool(forKey: "hideUnlabeled")
         suppressDidSet = false
+        spaceCount = getSpaceCount()
     }
 
     func swapSpaces(_ a: Int, _ b: Int) {
@@ -161,11 +176,6 @@ class SpaceManager: NSObject {
     }
 
     func start() {
-        // Create the overlay window
-        overlayWindow = LabelWindow(position: labelPosition)
-        overlayWindow?.margin = labelMargin
-        overlayWindow?.tintColor = labelTint.swiftUIColor
-
         // Listen for space changes
         NSWorkspace.shared.notificationCenter.addObserver(
             self,
@@ -174,99 +184,240 @@ class SpaceManager: NSObject {
             object: nil
         )
 
+        // Listen for display configuration changes (connect/disconnect monitor)
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screensChanged),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
+
         // Initial detection
         updateOverlay()
+    }
+
+    @objc private func screensChanged() {
+        // Remove windows for disconnected displays
+        let validIDs = Set((getPerDisplaySpaceInfo() ?? []).map { $0.displayID })
+        for id in overlayWindows.keys where !validIDs.contains(id) {
+            overlayWindows[id]?.orderOut(nil)
+            overlayWindows.removeValue(forKey: id)
+        }
+        updateOverlay()
+    }
+
+    private func overlayWindow(for displayID: String, screen: NSScreen) -> LabelWindow {
+        if let existing = overlayWindows[displayID] {
+            existing.targetScreen = screen
+            return existing
+        }
+        let win = LabelWindow(position: labelPosition)
+        win.margin = labelMargin
+        win.tintColor = labelTint.swiftUIColor
+        win.targetScreen = screen
+        overlayWindows[displayID] = win
+        return win
     }
 
     @objc private func activeSpaceChanged() {
         updateOverlay()
     }
 
-    // MARK: - Space Index via CGS (private framework)
+    // MARK: - Space detection via CGS (private framework)
 
     typealias CGSConnectionID = UInt32
     typealias CGSSpaceID = UInt64
 
-    func getSpaceIndexUsingCGS() -> Int? {
+    struct DisplaySpaceInfo {
+        let displayID: String
+        let currentSpaceGlobalIndex: Int
+        let screen: NSScreen?
+    }
+
+    /// Map a CGS "Display Identifier" (e.g. "Main" or a UUID) to an NSScreen.
+    private func screenForDisplayID(_ identifier: String) -> NSScreen? {
+        if identifier == "Main" {
+            return NSScreen.screens.first
+        }
+        for screen in NSScreen.screens {
+            guard let screenNumber = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID else { continue }
+            if let uuid = CGDisplayCreateUUIDFromDisplayID(screenNumber)?.takeUnretainedValue() {
+                let uuidString = CFUUIDCreateString(nil, uuid) as String?
+                if uuidString == identifier {
+                    return screen
+                }
+            }
+        }
+        return nil
+    }
+
+    func getPerDisplaySpaceInfo() -> [DisplaySpaceInfo]? {
         typealias CGSDefaultConnectionFunc = @convention(c) () -> CGSConnectionID
         typealias CGSCopyManagedDisplaySpacesFunc = @convention(c) (CGSConnectionID) -> CFArray?
-        typealias CGSGetActiveSpaceFunc = @convention(c) (CGSConnectionID) -> CGSSpaceID
 
         guard let connSym = dlsym(RTLD_DEFAULT, "_CGSDefaultConnection"),
-              let activeSpaceSym = dlsym(RTLD_DEFAULT, "CGSGetActiveSpace"),
               let managedSym = dlsym(RTLD_DEFAULT, "CGSCopyManagedDisplaySpaces") else {
-            NSLog("DeskPlate: failed to load CGS symbols")
             return nil
         }
 
         let connFn = unsafeBitCast(connSym, to: CGSDefaultConnectionFunc.self)
-        let activeSpaceFn = unsafeBitCast(activeSpaceSym, to: CGSGetActiveSpaceFunc.self)
         let managedFn = unsafeBitCast(managedSym, to: CGSCopyManagedDisplaySpacesFunc.self)
 
         let conn = connFn()
-        let activeSpaceID = activeSpaceFn(conn)
+        guard let displays = managedFn(conn) as? [[String: Any]] else { return nil }
 
-        guard let displays = managedFn(conn) as? [[String: Any]] else {
-            NSLog("DeskPlate: CGSCopyManagedDisplaySpaces returned nil")
-            return nil
-        }
+        var result: [DisplaySpaceInfo] = []
+        var globalIndex = 0
 
-        var allSpaces: [CGSSpaceID] = []
         for display in displays {
-            if let spaces = display["Spaces"] as? [[String: Any]] {
-                for space in spaces {
-                    if let spaceID = space["id64"] as? CGSSpaceID {
-                        allSpaces.append(spaceID)
-                    }
+            guard let displayID = display["Display Identifier"] as? String,
+                  let spaces = display["Spaces"] as? [[String: Any]],
+                  let currentSpace = display["Current Space"] as? [String: Any],
+                  let currentID = currentSpace["id64"] as? CGSSpaceID else {
+                continue
+            }
+
+            var currentGlobalIndex = globalIndex  // fallback to first space on this display
+            for (i, space) in spaces.enumerated() {
+                if let spaceID = space["id64"] as? CGSSpaceID, spaceID == currentID {
+                    currentGlobalIndex = globalIndex + i
+                    break
                 }
             }
+
+            result.append(DisplaySpaceInfo(
+                displayID: displayID,
+                currentSpaceGlobalIndex: currentGlobalIndex,
+                screen: screenForDisplayID(displayID)
+            ))
+            globalIndex += spaces.count
         }
 
-        if let idx = allSpaces.firstIndex(of: activeSpaceID) {
-            return idx
+        return result
+    }
+
+    func getSpaceCount() -> Int {
+        typealias CGSDefaultConnectionFunc = @convention(c) () -> CGSConnectionID
+        typealias CGSCopyManagedDisplaySpacesFunc = @convention(c) (CGSConnectionID) -> CFArray?
+
+        guard let connSym = dlsym(RTLD_DEFAULT, "_CGSDefaultConnection"),
+              let managedSym = dlsym(RTLD_DEFAULT, "CGSCopyManagedDisplaySpaces") else {
+            return max(spaceCount, 1)
         }
-        NSLog("DeskPlate: active space ID %llu not found in space list", activeSpaceID)
-        return nil
+
+        let connFn = unsafeBitCast(connSym, to: CGSDefaultConnectionFunc.self)
+        let managedFn = unsafeBitCast(managedSym, to: CGSCopyManagedDisplaySpacesFunc.self)
+
+        let conn = connFn()
+        guard let rawDisplays = managedFn(conn) as? [[String: Any]] else {
+            return max(spaceCount, 1)
+        }
+
+        var count = 0
+        for display in rawDisplays {
+            if let spaces = display["Spaces"] as? [[String: Any]] {
+                count += spaces.count
+            }
+        }
+        return max(count, 1)
     }
 
     // MARK: - Overlay Update
 
     func updateOverlay() {
         if !overlayEnabled {
-            overlayWindow?.orderOut(nil)
+            for win in overlayWindows.values { win.orderOut(nil) }
             onMenubarLabelClear?()
             return
         }
 
-        guard let realIndex = getSpaceIndexUsingCGS() else {
-            // CGS failed — show warning instead of wrong desktop
+        let newCount = getSpaceCount()
+        if newCount != spaceCount {
+            spaceCount = newCount
+            onSpaceCountChanged?(newCount)
+        }
+
+        guard let displayInfos = getPerDisplaySpaceInfo(), !displayInfos.isEmpty else {
+            // CGS failed — show warning
             if labelPosition == .inMenubar {
-                overlayWindow?.orderOut(nil)
+                for win in overlayWindows.values { win.orderOut(nil) }
                 onMenubarLabelUpdate?("Desktop ?", "exclamationmark.triangle")
             } else {
                 onMenubarLabelClear?()
-                overlayWindow?.show(label: "Desktop ?", icon: "exclamationmark.triangle")
+                // Show error on all existing windows
+                for win in overlayWindows.values {
+                    win.show(label: "Desktop ?", icon: "exclamationmark.triangle")
+                }
             }
             return
         }
-        currentSpaceIndex = realIndex
 
-        let label = labels[currentSpaceIndex]
-        let icon = icons[currentSpaceIndex]
+        // Track which display has the focused space (for menu bar label + currentSpaceIndex)
+        let focusedDisplayID: String? = {
+            typealias CGSDefaultConnectionFunc = @convention(c) () -> CGSConnectionID
+            typealias CGSGetActiveSpaceFunc = @convention(c) (CGSConnectionID) -> CGSSpaceID
+            guard let connSym = dlsym(RTLD_DEFAULT, "_CGSDefaultConnection"),
+                  let activeSym = dlsym(RTLD_DEFAULT, "CGSGetActiveSpace") else { return nil }
+            let connFn = unsafeBitCast(connSym, to: CGSDefaultConnectionFunc.self)
+            let activeFn = unsafeBitCast(activeSym, to: CGSGetActiveSpaceFunc.self)
+            let activeID = activeFn(connFn())
+            // Find which display owns this space
+            typealias CGSCopyManagedDisplaySpacesFunc = @convention(c) (CGSConnectionID) -> CFArray?
+            guard let managedSym = dlsym(RTLD_DEFAULT, "CGSCopyManagedDisplaySpaces") else { return nil }
+            let managedFn = unsafeBitCast(managedSym, to: CGSCopyManagedDisplaySpacesFunc.self)
+            guard let displays = managedFn(connFn()) as? [[String: Any]] else { return nil }
+            for display in displays {
+                guard let displayID = display["Display Identifier"] as? String,
+                      let spaces = display["Spaces"] as? [[String: Any]] else { continue }
+                for space in spaces {
+                    if let id = space["id64"] as? CGSSpaceID, id == activeID {
+                        return displayID
+                    }
+                }
+            }
+            return nil
+        }()
 
-        let displayLabel: String
-        if let label = label, !label.isEmpty {
-            displayLabel = label
-        } else {
-            displayLabel = "Desktop \(currentSpaceIndex + 1)"
+        // Collect all active space indices across displays
+        activeSpaceIndices = Set(displayInfos.map { $0.currentSpaceGlobalIndex })
+
+        // Update each display's overlay
+        var menubarUpdated = false
+        for info in displayInfos {
+            let idx = info.currentSpaceGlobalIndex
+            let label = labels[idx]
+            let icon = icons[idx]
+            let hasCustomLabel = (label != nil && !label!.isEmpty) || icon != nil
+            let displayLabel = (label != nil && !label!.isEmpty) ? label! : "Desktop \(idx + 1)"
+
+            // Update currentSpaceIndex for the focused display (used by preferences highlighting)
+            if info.displayID == focusedDisplayID {
+                currentSpaceIndex = idx
+            }
+
+            if labelPosition == .inMenubar {
+                // Only show the focused display's label in the menu bar
+                if info.displayID == focusedDisplayID {
+                    if hideUnlabeled && !hasCustomLabel {
+                        onMenubarLabelClear?()
+                    } else {
+                        onMenubarLabelUpdate?(displayLabel, icon)
+                    }
+                    menubarUpdated = true
+                }
+                overlayWindows[info.displayID]?.orderOut(nil)
+            } else if hideUnlabeled && !hasCustomLabel {
+                overlayWindows[info.displayID]?.orderOut(nil)
+            } else if let screen = info.screen {
+                let win = overlayWindow(for: info.displayID, screen: screen)
+                win.show(label: displayLabel, icon: icon)
+            }
         }
 
         if labelPosition == .inMenubar {
-            overlayWindow?.orderOut(nil)
-            onMenubarLabelUpdate?(displayLabel, icon)
+            if !menubarUpdated { onMenubarLabelClear?() }
         } else {
             onMenubarLabelClear?()
-            overlayWindow?.show(label: displayLabel, icon: icon)
         }
     }
 

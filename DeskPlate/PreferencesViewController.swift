@@ -9,6 +9,8 @@ class PreferencesViewController: NSViewController {
     private var stackView: NSStackView!
     private var rows: [(Int, NSTextField)] = []
     private var iconButtons: [Int: NSButton] = [:]
+    private var indexLabels: [Int: NSTextField] = [:]
+    private var spaceChangeObserver: Any?
     private var iconPopover: NSPopover?
     private var rowViews: [DraggableRowView] = []
     private weak var highlightedRowView: DraggableRowView?
@@ -19,10 +21,18 @@ class PreferencesViewController: NSViewController {
     private var colorStack: NSStackView!
     private var colorButtons: [LabelTint: NSButton] = [:]
     private var overlayToggle: NSSwitch!
-    private var spaceCount = 8
+    private var hideUnlabeledToggle: NSSwitch!
+    private var spaceCount: Int
 
     init(spaceManager: SpaceManager) {
         self.spaceManager = spaceManager
+        // Use detected count, but show at least enough rows for any saved labels
+        let detected = spaceManager.getSpaceCount()
+        let highestSaved = max(
+            spaceManager.labels.keys.max() ?? -1,
+            spaceManager.icons.keys.max() ?? -1
+        ) + 1
+        self.spaceCount = max(detected, highestSaved)
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -37,9 +47,72 @@ class PreferencesViewController: NSViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         buildUI()
-        // Let Auto Layout compute the height from the top-to-bottom constraint chain
+        resizeToFit()
+
+        spaceChangeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.updateHighlights()
+        }
+
+        spaceManager.onSpaceCountChanged = { [weak self] newCount in
+            guard let self = self else { return }
+            let highestSaved = max(
+                self.spaceManager.labels.keys.max() ?? -1,
+                self.spaceManager.icons.keys.max() ?? -1
+            ) + 1
+            let needed = max(newCount, highestSaved)
+            guard needed != self.spaceCount else { return }
+            self.spaceCount = needed
+            self.rebuildRows()
+        }
+    }
+
+    private func resizeToFit() {
         let fitting = view.fittingSize
         view.setFrameSize(NSSize(width: 400, height: fitting.height))
+        view.window?.setContentSize(NSSize(width: 400, height: fitting.height))
+    }
+
+    private func updateHighlights() {
+        for (index, label) in indexLabels {
+            if spaceManager.activeSpaceIndices.contains(index) {
+                label.textColor = .controlAccentColor
+                label.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
+            } else {
+                label.textColor = .labelColor
+                label.font = NSFont.systemFont(ofSize: 12)
+            }
+        }
+    }
+
+    deinit {
+        if let observer = spaceChangeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+    }
+
+    private func rebuildRows() {
+        // Remove existing rows
+        for row in rowViews {
+            stackView.removeArrangedSubview(row)
+            row.removeFromSuperview()
+        }
+        rows.removeAll()
+        iconButtons.removeAll()
+        indexLabels.removeAll()
+        rowViews.removeAll()
+
+        // Add new rows
+        for i in 0..<spaceCount {
+            let row = makeRow(index: i)
+            stackView.addArrangedSubview(row)
+            row.widthAnchor.constraint(equalTo: stackView.widthAnchor).isActive = true
+        }
+
+        resizeToFit()
     }
 
     func updateOverlayToggle(_ enabled: Bool) {
@@ -213,9 +286,10 @@ class PreferencesViewController: NSViewController {
         divider.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(divider)
 
-        // Show Overlay (left) + Start at Login (right) — same row
+        // Toggle rows
         let overlayLabel = NSTextField(labelWithString: "Show Overlay")
         overlayLabel.font = NSFont.systemFont(ofSize: 12)
+        overlayLabel.alignment = .right
         overlayLabel.toolTip = "Show or hide the desktop label overlay"
         overlayLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(overlayLabel)
@@ -229,8 +303,25 @@ class PreferencesViewController: NSViewController {
         overlayToggle.action = #selector(overlayToggled(_:))
         view.addSubview(overlayToggle)
 
+        let hideUnlabeledLabel = NSTextField(labelWithString: "Labeled Only")
+        hideUnlabeledLabel.font = NSFont.systemFont(ofSize: 12)
+        hideUnlabeledLabel.alignment = .right
+        hideUnlabeledLabel.toolTip = "Only show the overlay on desktops with a custom label or icon"
+        hideUnlabeledLabel.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(hideUnlabeledLabel)
+
+        hideUnlabeledToggle = NSSwitch()
+        hideUnlabeledToggle.controlSize = .mini
+        hideUnlabeledToggle.translatesAutoresizingMaskIntoConstraints = false
+        hideUnlabeledToggle.state = spaceManager.hideUnlabeled ? .on : .off
+        hideUnlabeledToggle.toolTip = "Only show the overlay on desktops with a custom label or icon"
+        hideUnlabeledToggle.target = self
+        hideUnlabeledToggle.action = #selector(hideUnlabeledToggled(_:))
+        view.addSubview(hideUnlabeledToggle)
+
         let loginLabel = NSTextField(labelWithString: "Start at Login")
         loginLabel.font = NSFont.systemFont(ofSize: 12)
+        loginLabel.alignment = .right
         loginLabel.toolTip = "Automatically launch Desk Plate when you log in"
         loginLabel.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(loginLabel)
@@ -297,19 +388,28 @@ class PreferencesViewController: NSViewController {
             divider.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
             divider.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
 
+            // Row 1, Column 1: Show Overlay
             overlayLabel.topAnchor.constraint(equalTo: divider.bottomAnchor, constant: 12),
-            overlayLabel.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20),
+            overlayLabel.trailingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 80),
 
             overlayToggle.centerYAnchor.constraint(equalTo: overlayLabel.centerYAnchor),
-            overlayToggle.leadingAnchor.constraint(equalTo: overlayLabel.trailingAnchor, constant: 8),
+            overlayToggle.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 88),
 
+            // Row 1, Column 2: Start at Login
             loginLabel.centerYAnchor.constraint(equalTo: overlayLabel.centerYAnchor),
-            loginLabel.leadingAnchor.constraint(equalTo: overlayToggle.trailingAnchor, constant: 20),
+            loginLabel.leadingAnchor.constraint(equalTo: overlayToggle.trailingAnchor, constant: 16),
 
             loginToggle.centerYAnchor.constraint(equalTo: overlayLabel.centerYAnchor),
             loginToggle.leadingAnchor.constraint(equalTo: loginLabel.trailingAnchor, constant: 8),
 
-            doneBtn.topAnchor.constraint(equalTo: overlayLabel.bottomAnchor, constant: 8),
+            // Row 2, Column 1: Labeled Only
+            hideUnlabeledLabel.topAnchor.constraint(equalTo: overlayLabel.bottomAnchor, constant: 8),
+            hideUnlabeledLabel.trailingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 80),
+
+            hideUnlabeledToggle.centerYAnchor.constraint(equalTo: hideUnlabeledLabel.centerYAnchor),
+            hideUnlabeledToggle.leadingAnchor.constraint(equalTo: stackView.leadingAnchor, constant: 88),
+
+            doneBtn.topAnchor.constraint(equalTo: hideUnlabeledLabel.bottomAnchor, constant: 8),
             doneBtn.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -20),
             doneBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20),
             doneBtn.widthAnchor.constraint(equalToConstant: 80),
@@ -352,8 +452,8 @@ class PreferencesViewController: NSViewController {
         field.target = self
         field.action = #selector(fieldChanged(_:))
 
-        // Highlight current space
-        if index == spaceManager.currentIndex {
+        // Highlight active/visible spaces
+        if spaceManager.activeSpaceIndices.contains(index) {
             indexLabel.toolTip = "Choose an icon and label for the current desktop"
             indexLabel.textColor = .controlAccentColor
             indexLabel.font = NSFont.systemFont(ofSize: 12, weight: .semibold)
@@ -361,6 +461,7 @@ class PreferencesViewController: NSViewController {
             indexLabel.toolTip = "Choose an icon and label for Desktop \(index + 1)"
         }
 
+        indexLabels[index] = indexLabel
         row.addSubview(indexLabel)
         row.addSubview(iconBtn)
         row.addSubview(field)
@@ -463,6 +564,10 @@ class PreferencesViewController: NSViewController {
 
     @objc private func overlayToggled(_ sender: NSSwitch) {
         spaceManager.overlayEnabled = sender.state == .on
+    }
+
+    @objc private func hideUnlabeledToggled(_ sender: NSSwitch) {
+        spaceManager.hideUnlabeled = sender.state == .on
     }
 
     @objc private func loginToggled(_ sender: NSSwitch) {

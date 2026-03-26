@@ -4,7 +4,7 @@
 
 # Desk Plate
 
-A lightweight menu bar app that shows a floating label identifying your current desktop/space. Give your spaces memorable names to keep track of your work.
+A lightweight menu bar app that shows an unobtrusive, floating label identifying your current desktop/space. Give your spaces memorable names to keep track of your work.
 Built for macOS 26 (Tahoe).
 
 By Jim Bagrow (https://bagrow.com)
